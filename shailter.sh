@@ -1,14 +1,13 @@
 #!/bin/bash
 LOG_PATH='/var/shanilog.txt'
 
-REG_EXPR=''
 function packet_grep_engine()
 {
     rm -f .log.txt
 	cp -f ${LOG_PATH} .log.txt
 	while true
 	do
-		first_index=`grep "${REG_EXPR}" .log.txt  -n -m 1 | cut -d : -f 1`
+		first_index=`grep "$@" .log.txt  -n -m 1 | cut -d : -f 1`
 		if [ -e ${first_index} ]; then
 			break;
 		fi
@@ -23,21 +22,37 @@ function packet_grep_engine()
 
 function packet_grep_combined()
 {
-
+    exit 0 # not available
 }
 
 function find_srcip()
 {
-
+    query="Source IP        : $1"
+    packet_grep_engine "${query}"
 }
 
 function find_dstip()
 {
-
+    query="Destination IP   : $1"
+    packet_grep_engine "${query}"
 }
 
+function find_srcmac()
+{
+    query="Source Address      : $1"
+    packet_grep_engine "${query}"
+}
+
+function find_dstmac()
+{
+    query="Destination Address : $1"
+    packet_grep_engine "${query}"
+}
 
 case "$1" in
-	srcip) echo  "srcip:$2"; grep "Source IP";;
-	dstip) echo  "dstip:$2";  ;;
+	srcip) find_srcip $2 ;;
+	dstip) find_dstip $2 ;;
+    srcmac) find_srcmac $2 ;;
+    dstmac) find_dstmac $2 ;;
+    raw) packet_grep_engine $2
 esac
