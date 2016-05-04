@@ -40,7 +40,7 @@ int main(int argc, char **argv)
 
 	unsigned char *buffer = (unsigned char *)malloc(65536);	//Its Big!
 
-	logfile = fopen("log.txt", "w");
+	logfile = fopen("/var/shanilog.txt", "w");
 	if (logfile == NULL) {
 		printf("Unable to create log.txt file.");
 		return 1;

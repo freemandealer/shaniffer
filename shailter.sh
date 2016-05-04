@@ -1,9 +1,11 @@
 #!/bin/bash
+LOG_PATH='/var/shanilog.txt'
 
 REG_EXPR=''
 function packet_grep_engine()
 {
-	cp -f log.txt .log.txt
+    rm -f .log.txt
+	cp -f ${LOG_PATH} .log.txt
 	while true
 	do
 		first_index=`grep "${REG_EXPR}" .log.txt  -n -m 1 | cut -d : -f 1`
@@ -39,4 +41,3 @@ case "$1" in
 	srcip) echo  "srcip:$2"; grep "Source IP";;
 	dstip) echo  "dstip:$2";  ;;
 esac
-
