@@ -18,7 +18,9 @@
 #include<sys/types.h>
 #include<unistd.h>
 
+void ProcessIPPacket(unsigned char *, int);
 void ProcessPacket(unsigned char *, int);
+void print_arp_packet(unsigned char *, int);
 void print_ip_header(unsigned char *, int);
 void print_tcp_packet(unsigned char *, int);
 void print_udp_packet(unsigned char *, int);
@@ -27,7 +29,7 @@ void PrintData(unsigned char *, int);
 
 FILE *logfile;
 struct sockaddr_in source, dest;
-int tcp = 0, udp = 0, icmp = 0, others = 0, igmp = 0, total = 0, i, j;
+int tcp = 0, udp = 0, icmp = 0, arp = 0, others = 0, igmp = 0, total = 0, i, j;
 
 int main(int argc, char **argv)
 {
@@ -77,9 +79,8 @@ int main(int argc, char **argv)
 	return 0;
 }
 
-void ProcessPacket(unsigned char *buffer, int size)
+void ProcessIPPacket(unsigned char *buffer, int size)
 {
-	//Get the IP Header part of this packet , excluding the ethernet header
 	struct iphdr *iph = (struct iphdr *)(buffer + sizeof(struct ethhdr));
 
 	++total;
@@ -108,9 +109,26 @@ void ProcessPacket(unsigned char *buffer, int size)
 		++others;
 		break;
 	}
+}
+
+void ProcessPacket(unsigned char *buffer, int size)
+{
+	int ether_proto = ((struct ethhdr *)buffer)->h_proto;
+	switch (ether_proto) {
+	case 0x0608:
+		++arp;
+		print_arp_packet(buffer, size);
+		break;
+	case 0x0008:
+		ProcessIPPacket(buffer, size);
+		break;
+	default:		//Some Other Protocol like ARP etc.
+		++others;
+		break;
+	}
 	printf
-	    ("TCP : %d   UDP : %d   ICMP : %d   IGMP : %d   Others : %d   Total : %d\r",
-	     tcp, udp, icmp, igmp, others, total);
+	    ("TCP : %d   UDP : %d   ICMP : %d   IGMP : %d   ARP : %d   Others : %d   Total : %d\r",
+	     tcp, udp, icmp, igmp, arp, others, total);
 }
 
 void print_ethernet_header(unsigned char *Buffer, int Size)
@@ -129,6 +147,49 @@ void print_ethernet_header(unsigned char *Buffer, int Size)
 		eth->h_source[3], eth->h_source[4], eth->h_source[5]);
 	fprintf(logfile, "   |-Protocol            : %u \n",
 		(unsigned short)eth->h_proto);
+}
+
+void print_arp_packet(unsigned char *Buffer, int Size)
+{
+	struct ether_arp *arp = (struct ether_arp *)(Buffer + sizeof(struct ethhdr));
+	struct arphdr *arph = (struct arphdr *)arp;
+
+	fprintf(logfile,
+		"\n\n***********************ARP Packet*************************\n");
+	print_ethernet_header(Buffer, Size);
+	fprintf(logfile, "\n");
+	fprintf(logfile, "ARP Header\n");
+	fprintf(logfile, "   |-ar_hrd      : %u\n", ntohs(arph->ar_hrd));
+	fprintf(logfile, "   |-ar_pro      : %u\n", ntohs(arph->ar_pro));
+	fprintf(logfile, "   |-Length of Hardware Address      : %u\n", ntohs(arph->ar_hln));
+	fprintf(logfile, "   |-Length of Protocol Address      : %u\n", ntohs(arph->ar_pln));
+	fprintf(logfile, "   |-Opcode(command)      : %u\n", ntohs(arph->ar_op));
+	fprintf(logfile, "\n");
+	fprintf(logfile, "ARP Content\n");
+	fprintf(logfile, "   |-Sender Hardware Address      : %.2X-%.2X-%.2X-%.2X-%.2X-%.2X \n",
+			arp->arp_sha[0], arp->arp_sha[1], arp->arp_sha[2], arp->arp_sha[3],
+			arp->arp_sha[4], arp->arp_sha[5]);
+	fprintf(logfile, "   |-Sender Protocol Address      : %u.%u.%u.%u\n",
+			arp->arp_spa[0], arp->arp_spa[1], arp->arp_spa[2], arp->arp_spa[3]);
+	fprintf(logfile, "   |-Target Hardware Address      : %.2X-%.2X-%.2X-%.2X-%.2X-%.2X \n",
+			arp->arp_tha[0], arp->arp_tha[1], arp->arp_tha[2], arp->arp_tha[3],
+			arp->arp_tha[4], arp->arp_tha[5]);
+	fprintf(logfile, "   |-Target Protocol Address      : %u.%u.%u.%u\n",
+			arp->arp_tpa[0], arp->arp_tpa[1], arp->arp_tpa[2], arp->arp_tpa[3]);
+	fprintf(logfile, "\n");
+	fprintf(logfile,
+		"                        DATA Dump                         ");
+	fprintf(logfile, "\n");
+
+	fprintf(logfile, "ARP Header\n");
+	PrintData(Buffer + sizeof(struct ethhdr), sizeof(struct arphdr));
+
+	fprintf(logfile, "ARP Payload\n");
+	PrintData(Buffer + sizeof(struct ethhdr) + sizeof(struct arphdr),
+			Size - sizeof(struct ethhdr) - sizeof(struct arphdr));
+
+	fprintf(logfile,
+		"\n###########################################################");
 }
 
 void print_ip_header(unsigned char *Buffer, int Size)
