@@ -105,7 +105,7 @@ void ProcessIPPacket(unsigned char *buffer, int size)
 		print_udp_packet(buffer, size);
 		break;
 
-	default:		//Some Other Protocol like ARP etc.
+	default:		//Some Other Protocol
 		++others;
 		break;
 	}
@@ -122,7 +122,7 @@ void ProcessPacket(unsigned char *buffer, int size)
 	case 0x0008:
 		ProcessIPPacket(buffer, size);
 		break;
-	default:		//Some Other Protocol like ARP etc.
+	default:		//Some Other Protocol.
 		++others;
 		break;
 	}
