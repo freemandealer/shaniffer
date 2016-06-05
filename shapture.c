@@ -19,10 +19,12 @@
 #include<unistd.h>
 #include "include/dhcp.h"
 #include "include/rip.h"
+#include "include/ospf.h"
 
 void ProcessIPPacket(unsigned char *, int);
 void ProcessPacket(unsigned char *, int);
 void print_arp_packet(unsigned char *, int);
+void print_ospf_packet(unsigned char *, int);
 void print_ip_header(unsigned char *, int);
 void print_tcp_packet(unsigned char *, int);
 void process_udp_packet(unsigned char *, int);
@@ -31,7 +33,7 @@ void PrintData(unsigned char *, int);
 
 FILE *logfile;
 struct sockaddr_in source, dest;
-int tcp = 0, udp = 0, icmp = 0, arp = 0, others = 0, igmp = 0, total = 0, dhcp =0, rip = 0, i, j;
+int tcp = 0, udp = 0, icmp = 0, arp = 0, ospf = 0, others = 0, igmp = 0, total = 0, dhcp =0, rip = 0, i, j;
 
 int main(int argc, char **argv)
 {
@@ -106,6 +108,11 @@ void ProcessIPPacket(unsigned char *buffer, int size)
 		process_udp_packet(buffer, size);
 		break;
 
+    case 89:
+        ++ospf;
+        print_ospf_packet(buffer, size);
+        break;
+
 	default:		//Some Other Protocol like ARP etc.
 		++others;
 		break;
@@ -129,8 +136,8 @@ void ProcessPacket(unsigned char *buffer, int size)
 		break;
 	}
 	printf
-	    ("TCP : %d   UDP : %d (DHCP : %d   RIP : %d)   ICMP : %d   IGMP : %d   ARP : %d   Others : %d   Total : %d\r",
-	     tcp, udp, dhcp, rip, icmp, igmp, arp, others, total);
+	    ("TCP : %d   UDP : %d (DHCP : %d   RIP : %d)   ICMP : %d   IGMP : %d   ARP : %d    OSPF : %d   Others : %d   Total : %d\r",
+	     tcp, udp, dhcp, rip, icmp, igmp, arp, ospf, others, total);
 }
 
 void print_ethernet_header(unsigned char *Buffer, int Size)
@@ -189,6 +196,68 @@ void print_arp_packet(unsigned char *Buffer, int Size)
 	fprintf(logfile, "ARP Payload\n");
 	PrintData(Buffer + sizeof(struct ethhdr) + sizeof(struct arphdr),
 			Size - sizeof(struct ethhdr) - sizeof(struct arphdr));
+
+	fprintf(logfile,
+		"\n###########################################################");
+}
+
+void print_ospf_packet(unsigned char *Buffer, int Size)
+{
+	struct ospf_hdr *ospfhdr = (struct ospf_hdr *)(Buffer + sizeof(struct ethhdr));
+
+	fprintf(logfile,
+		"\n\n***********************OSPF Packet*************************\n");
+	print_ethernet_header(Buffer, Size);
+	fprintf(logfile, "\n");
+	fprintf(logfile, "OSPF Header\n");
+	fprintf(logfile, "   |-Version  : %d\n", ospfhdr->version);
+	switch (ospfhdr->type) {
+	case 1:
+		fprintf(logfile, "   |-Type     : hello(%d)\n", ospfhdr->type);
+		break;
+	case 2:
+		fprintf(logfile, "   |-Type     : database desciption(%d)\n", ospfhdr->type);
+		break;
+	case 3:
+		fprintf(logfile, "   |-Type     : lsr(%d)\n", ospfhdr->type);
+		break;
+	case 4:
+		fprintf(logfile, "   |-Type     : lsu(%d)\n", ospfhdr->type);
+		break;
+	default:
+		printf("unknown OSPF packet type\n");
+	}
+	fprintf(logfile, "   |-Length   : %d\n", ntohs(ospfhdr->len));
+	fprintf(logfile, "   |-rtr ID   : %d\n", ntohl(ospfhdr->rtr_id));
+	fprintf(logfile, "   |-Area ID  : %d\n", ntohl(ospfhdr->area_id));
+	fprintf(logfile, "   |-CheckSum : %d\n", ntohs(ospfhdr->chksum));
+	switch (ntohs(ospfhdr->auth_type)) {
+	case 0:
+		fprintf(logfile, "   |-AuthType : none(%d)\n", ntohs(ospfhdr->auth_type));
+		break;
+	case 1:
+	    fprintf(logfile, "   |-AuthType : simple(%d)\n", ntohs(ospfhdr->auth_type));
+	    fprintf(logfile, "   |-AuthKey  : see data dump\n");
+		break;
+	case 2:
+	    fprintf(logfile, "   |-AuthType : crypted(%d)\n", ntohs(ospfhdr->auth_type));
+	    fprintf(logfile, "   |-AuthKey  : see data dump\n");
+		break;
+	}
+	fprintf(logfile, "\n");
+
+	// TODO Add detailed type-specific headers and contents
+
+	fprintf(logfile,
+		"                        DATA Dump                         ");
+	fprintf(logfile, "\n");
+
+	fprintf(logfile, "OSPF Header\n");
+	PrintData(Buffer + sizeof(struct ethhdr), sizeof(struct ospf_hdr));
+
+	fprintf(logfile, "OSPF Payload\n");
+	PrintData(Buffer + sizeof(struct ethhdr) + sizeof(struct ospf_hdr),
+			Size - sizeof(struct ethhdr) - sizeof(struct ospf_hdr));
 
 	fprintf(logfile,
 		"\n###########################################################");
