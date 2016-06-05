@@ -4,7 +4,6 @@
 #include<stdio.h>		//For standard things
 #include<stdlib.h>		//malloc
 #include<string.h>		//strlen
-
 #include<netinet/ip_icmp.h>	//Provides declarations for icmp header
 #include<netinet/udp.h>		//Provides declarations for udp header
 #include<netinet/tcp.h>		//Provides declarations for tcp header
@@ -17,19 +16,20 @@
 #include<sys/time.h>
 #include<sys/types.h>
 #include<unistd.h>
+#include "include/dhcp.h"
 
 void ProcessIPPacket(unsigned char *, int);
 void ProcessPacket(unsigned char *, int);
 void print_arp_packet(unsigned char *, int);
 void print_ip_header(unsigned char *, int);
 void print_tcp_packet(unsigned char *, int);
-void print_udp_packet(unsigned char *, int);
+void process_udp_packet(unsigned char *, int);
 void print_icmp_packet(unsigned char *, int);
 void PrintData(unsigned char *, int);
 
 FILE *logfile;
 struct sockaddr_in source, dest;
-int tcp = 0, udp = 0, icmp = 0, arp = 0, others = 0, igmp = 0, total = 0, i, j;
+int tcp = 0, udp = 0, icmp = 0, arp = 0, others = 0, igmp = 0, total = 0, dhcp =0, rip = 0, i, j;
 
 int main(int argc, char **argv)
 {
@@ -83,7 +83,6 @@ void ProcessIPPacket(unsigned char *buffer, int size)
 {
 	struct iphdr *iph = (struct iphdr *)(buffer + sizeof(struct ethhdr));
 
-	++total;
 	switch (iph->protocol)	//Check the Protocol and do accordingly...
 	{
 	case 1:		//ICMP Protocol
@@ -102,7 +101,7 @@ void ProcessIPPacket(unsigned char *buffer, int size)
 
 	case 17:		//UDP Protocol
 		++udp;
-		print_udp_packet(buffer, size);
+		process_udp_packet(buffer, size);
 		break;
 
 	default:		//Some Other Protocol like ARP etc.
@@ -114,6 +113,7 @@ void ProcessIPPacket(unsigned char *buffer, int size)
 void ProcessPacket(unsigned char *buffer, int size)
 {
 	int ether_proto = ((struct ethhdr *)buffer)->h_proto;
+	++total;
 	switch (ether_proto) {
 	case 0x0608:
 		++arp;
@@ -127,8 +127,8 @@ void ProcessPacket(unsigned char *buffer, int size)
 		break;
 	}
 	printf
-	    ("TCP : %d   UDP : %d   ICMP : %d   IGMP : %d   ARP : %d   Others : %d   Total : %d\r",
-	     tcp, udp, icmp, igmp, arp, others, total);
+	    ("TCP : %d   UDP : %d (DHCP : %d   RIP : %d)   ICMP : %d   IGMP : %d   ARP : %d   Others : %d   Total : %d\r",
+	     tcp, udp, dhcp, rip, icmp, igmp, arp, others, total);
 }
 
 void print_ethernet_header(unsigned char *Buffer, int Size)
@@ -294,18 +294,32 @@ void print_tcp_packet(unsigned char *Buffer, int Size)
 		"\n###########################################################");
 }
 
+int is_dhcp_packet(int src_port, int dst_port, unsigned char *buf, int size)
+{
+    // easy check via ports
+    if (src_port == 68 && dst_port == 67)
+        return 1;
+    else if (src_port == 67 && dst_port == 68)
+        return 1;
+    else
+        return 0;
+}
+
+int is_rip_packet(int src_port, int dst_port, unsigned char *buf, int size)
+{
+    return 0; //TODO
+}
+
 void print_udp_packet(unsigned char *Buffer, int Size)
 {
 
 	unsigned short iphdrlen;
-
 	struct iphdr *iph = (struct iphdr *)(Buffer + sizeof(struct ethhdr));
 
 	iphdrlen = iph->ihl * 4;
 
 	struct udphdr *udph =
 	    (struct udphdr *)(Buffer + iphdrlen + sizeof(struct ethhdr));
-
 	int header_size = sizeof(struct ethhdr) + iphdrlen + sizeof udph;
 
 	fprintf(logfile,
@@ -333,6 +347,103 @@ void print_udp_packet(unsigned char *Buffer, int Size)
 
 	fprintf(logfile,
 		"\n###########################################################");
+}
+
+void print_dhcp_packet(unsigned char *Buffer, int Size)
+{
+	unsigned short iphdrlen;
+	struct iphdr *iph = (struct iphdr *)(Buffer + sizeof(struct ethhdr));
+
+	iphdrlen = iph->ihl * 4;
+
+	struct udphdr *udph =
+	    (struct udphdr *)(Buffer + iphdrlen + sizeof(struct ethhdr));
+	int header_size = sizeof(struct ethhdr) + iphdrlen + sizeof udph;
+    struct dhcp_packet *dhcp =
+        (struct dhcp_packet *)(Buffer + header_size);
+
+	fprintf(logfile,
+		"\n\n***********************DHCP Packet*************************\n");
+
+	print_ip_header(Buffer, Size);
+
+	fprintf(logfile, "\nUDP Header\n");
+	fprintf(logfile, "   |-Source Port      : %d\n", ntohs(udph->source));
+	fprintf(logfile, "   |-Destination Port : %d\n", ntohs(udph->dest));
+	fprintf(logfile, "   |-UDP Length       : %d\n", ntohs(udph->len));
+	fprintf(logfile, "   |-UDP Checksum     : %d\n", ntohs(udph->check));
+	fprintf(logfile, "\n");
+
+	fprintf(logfile, "\nDHCP Content\n");
+    if (1 == dhcp->op)
+	    fprintf(logfile, "   |-Operation      : c->s\n");
+    else if (2 == dhcp->op)
+	    fprintf(logfile, "   |-Operation      : s->c\n");
+    else
+        printf("bad dhcp packet\n");
+    if (1 == dhcp->htype)
+	    fprintf(logfile, "   |-Hardware Addr Type : Ethernet\n");
+    else
+	    fprintf(logfile, "   |-Hardware Addr Type : %d\n", dhcp->htype);
+	fprintf(logfile, "   |-Hardware Addr Len  : %d\n", dhcp->hlen);
+	fprintf(logfile, "   |-Hops        : %d\n", dhcp->hops);
+	fprintf(logfile, "   |-Transac ID  : %d\n", ntohl(dhcp->xid));
+	fprintf(logfile, "   |-Duration    : %d\n", ntohs(dhcp->secs));
+	fprintf(logfile, "   |-Flags       : 0x%x\n", ntohs(dhcp->flags));
+	fprintf(logfile, "   |-Client IP Used : %s\n", inet_ntoa(dhcp->ciaddr));
+	fprintf(logfile, "   |-Client IP      : %s\n", inet_ntoa(dhcp->yiaddr));
+	fprintf(logfile, "   |-Next Server    : %s\n", inet_ntoa(dhcp->siaddr));
+	fprintf(logfile, "   |-Relay Agent    : %s\n", inet_ntoa(dhcp->giaddr));
+    if (1 == dhcp->op)  // we only know the len of hardware address is 48 in ethernet
+	fprintf(logfile, "   |-Client Hardware Addr  : %.2X-%.2X-%.2X-%.2X-%.2X-%.2X \n",
+                dhcp->chaddr[0], dhcp->chaddr[1], dhcp->chaddr[2], dhcp->chaddr[3],
+                dhcp->chaddr[4], dhcp->chaddr[5]);
+	fprintf(logfile, "   |-Server Name    : %s\n", dhcp->sname);
+	fprintf(logfile, "   |-Boot Filename  : %s\n", dhcp->file);
+	fprintf(logfile, "   |-Options        : see dump data\n");
+	fprintf(logfile, "\n");
+
+	fprintf(logfile, "IP Header\n");
+	PrintData(Buffer, iphdrlen);
+
+	fprintf(logfile, "UDP Header\n");
+	PrintData(Buffer + iphdrlen, sizeof udph);
+
+	fprintf(logfile, "Data Payload\n");
+
+	//Move the pointer ahead and reduce the size of string
+	PrintData(Buffer + header_size, Size - header_size);
+
+	fprintf(logfile,
+		"\n###########################################################");
+}
+
+void print_rip_packet(unsigned char *buf, int size)
+{
+    return;
+}
+
+void process_udp_packet(unsigned char *Buffer, int Size)
+{
+	unsigned short iphdrlen;
+    int src_port, dst_port;
+	struct iphdr *iph = (struct iphdr *)(Buffer + sizeof(struct ethhdr));
+
+	iphdrlen = iph->ihl * 4;
+
+	struct udphdr *udph =
+	    (struct udphdr *)(Buffer + iphdrlen + sizeof(struct ethhdr));
+	src_port = ntohs(udph->source);
+	dst_port = ntohs(udph->dest);
+
+    if (is_dhcp_packet(src_port, dst_port, Buffer, Size)) {
+        dhcp ++;
+        print_dhcp_packet(Buffer, Size);
+    } else if (is_rip_packet(src_port, dst_port, Buffer, Size)) {
+        rip ++;
+        print_rip_packet(Buffer, Size);
+    } else
+        print_udp_packet(Buffer, Size);
 }
 
 void print_icmp_packet(unsigned char *Buffer, int Size)
