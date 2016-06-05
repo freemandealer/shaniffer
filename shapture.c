@@ -15,8 +15,10 @@
 #include<sys/ioctl.h>
 #include<sys/time.h>
 #include<sys/types.h>
+#include <linux/if.h>   // For struct in_addr
 #include<unistd.h>
 #include "include/dhcp.h"
+#include "include/rip.h"
 
 void ProcessIPPacket(unsigned char *, int);
 void ProcessPacket(unsigned char *, int);
@@ -307,7 +309,10 @@ int is_dhcp_packet(int src_port, int dst_port, unsigned char *buf, int size)
 
 int is_rip_packet(int src_port, int dst_port, unsigned char *buf, int size)
 {
-    return 0; //TODO
+    if (520 == src_port || 520 == dst_port)
+        return 1;
+    else
+        return 0;
 }
 
 void print_udp_packet(unsigned char *Buffer, int Size)
@@ -418,9 +423,63 @@ void print_dhcp_packet(unsigned char *Buffer, int Size)
 		"\n###########################################################");
 }
 
-void print_rip_packet(unsigned char *buf, int size)
+void print_rip_packet(unsigned char *Buffer, int Size)
 {
-    return;
+	unsigned short iphdrlen;
+	struct iphdr *iph = (struct iphdr *)(Buffer + sizeof(struct ethhdr));
+
+	iphdrlen = iph->ihl * 4;
+
+	struct udphdr *udph =
+	    (struct udphdr *)(Buffer + iphdrlen + sizeof(struct ethhdr));
+	int header_size = sizeof(struct ethhdr) + iphdrlen + sizeof udph;
+    struct rip_packet *rip =
+            (struct rip_packet *)(Buffer + header_size);
+
+	fprintf(logfile,
+		"\n\n***********************RIP Packet*************************\n");
+
+	print_ip_header(Buffer, Size);
+
+	fprintf(logfile, "\nUDP Header\n");
+	fprintf(logfile, "   |-Source Port      : %d\n", ntohs(udph->source));
+	fprintf(logfile, "   |-Destination Port : %d\n", ntohs(udph->dest));
+	fprintf(logfile, "   |-UDP Length       : %d\n", ntohs(udph->len));
+	fprintf(logfile, "   |-UDP Checksum     : %d\n", ntohs(udph->check));
+	fprintf(logfile, "\n");
+
+	fprintf(logfile, "\nRIP Content\n");
+	fprintf(logfile, "   |-Command     : %d\n", rip->cmd);
+	fprintf(logfile, "   |-Version     : %d\n", rip->ver);
+    if (1 == rip->ver) {
+	    fprintf(logfile, "   |-Addr Family : %d\n", ntohs(rip->u.v1.addr_family));
+	    fprintf(logfile, "   |-Address     : %s\n", inet_ntoa(*(struct in_addr *)&(rip->u.v1.addr)));
+	    fprintf(logfile, "   |-Metric      : %d\n", ntohl(rip->u.v1.metric));
+    } else if (2 == rip->ver) {
+	    fprintf(logfile, "   |-Addr Format : %d\n", ntohs(rip->u.v2.addr_format));
+	    fprintf(logfile, "   |-Route Tag   : %d\n", ntohs(rip->u.v2.rt_tag));
+	    fprintf(logfile, "   |-Address     : %s\n", inet_ntoa(*(struct in_addr *)&(rip->u.v2.addr)));
+	    fprintf(logfile, "   |-Subnet Mask : %s\n", inet_ntoa(*(struct in_addr *)&(rip->u.v2.subnet_mask)));
+	    fprintf(logfile, "   |-Next Hop    : %s\n", inet_ntoa(*(struct in_addr *)&(rip->u.v2.nhop)));
+	    fprintf(logfile, "   |-Metric      : %d\n", ntohl(rip->u.v2.metric));
+    } else {
+        printf("unknown version of rip\n");
+    }
+	fprintf(logfile, "\n");
+
+	fprintf(logfile, "IP Header\n");
+	PrintData(Buffer, iphdrlen);
+
+	fprintf(logfile, "UDP Header\n");
+	PrintData(Buffer + iphdrlen, sizeof udph);
+
+	fprintf(logfile, "Data Payload\n");
+
+	//Move the pointer ahead and reduce the size of string
+	PrintData(Buffer + header_size, Size - header_size);
+
+	fprintf(logfile,
+		"\n###########################################################");
 }
 
 void process_udp_packet(unsigned char *Buffer, int Size)
