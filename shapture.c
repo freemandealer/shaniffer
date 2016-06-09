@@ -203,13 +203,15 @@ void print_arp_packet(unsigned char *Buffer, int Size)
 
 void print_ospf_packet(unsigned char *Buffer, int Size)
 {
-	struct ospf_hdr *ospfhdr = (struct ospf_hdr *)(Buffer + sizeof(struct ethhdr));
+	struct ospf_hdr *ospfhdr = (struct ospf_hdr *)(Buffer + sizeof(struct ethhdr)+
+                                                    sizeof(struct iphdr));
 
 	fprintf(logfile,
 		"\n\n***********************OSPF Packet*************************\n");
-	print_ethernet_header(Buffer, Size);
-	fprintf(logfile, "\n");
-	fprintf(logfile, "OSPF Header\n");
+
+	print_ip_header(Buffer, Size);
+
+	fprintf(logfile, "\nOSPF Header\n");
 	fprintf(logfile, "   |-Version  : %d\n", ospfhdr->version);
 	switch (ospfhdr->type) {
 	case 1:
@@ -225,7 +227,7 @@ void print_ospf_packet(unsigned char *Buffer, int Size)
 		fprintf(logfile, "   |-Type     : lsu(%d)\n", ospfhdr->type);
 		break;
 	default:
-		printf("unknown OSPF packet type\n");
+		printf("unknown OSPF packet type (%d)\n", ospfhdr->type);
 	}
 	fprintf(logfile, "   |-Length   : %d\n", ntohs(ospfhdr->len));
 	fprintf(logfile, "   |-rtr ID   : %d\n", ntohl(ospfhdr->rtr_id));
